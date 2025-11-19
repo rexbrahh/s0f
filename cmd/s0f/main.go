@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rexliu/s0f/pkg/config"
 	"github.com/rexliu/s0f/pkg/core"
 	"github.com/rexliu/s0f/pkg/ipc"
 )
@@ -65,7 +67,7 @@ func main() {
 func usage() {
 	fmt.Println("Usage: s0f <command> [options]")
 	fmt.Println("Commands:")
-	fmt.Println("  init      Initialize a local profile (placeholder)")
+	fmt.Println("  init      Initialize a local profile (writes config.toml)")
 	fmt.Println("  ping      Call the daemon ping endpoint via IPC")
 	fmt.Println("  tree      Fetch the current bookmark tree from the daemon")
 	fmt.Println("  apply     Send apply_ops payload (JSON) to the daemon")
@@ -78,8 +80,24 @@ func usage() {
 func initProfile() {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	profilePath := fs.String("profile", "./_dev_profile", "Profile directory")
+	name := fs.String("name", "dev", "Profile name")
+	force := fs.Bool("force", false, "Overwrite existing config if present")
 	_ = fs.Parse(os.Args[2:])
-	fmt.Printf("[scaffold] would initialize profile at %s\n", *profilePath)
+	if err := os.MkdirAll(*profilePath, 0o700); err != nil {
+		fmt.Fprintf(os.Stderr, "init error: %v\n", err)
+		os.Exit(1)
+	}
+	configPath := filepath.Join(*profilePath, "config.toml")
+	if _, err := os.Stat(configPath); err == nil && !*force {
+		fmt.Fprintf(os.Stderr, "config already exists at %s (use --force to overwrite)\n", configPath)
+		os.Exit(1)
+	}
+	cfg := config.DefaultProfile(*name)
+	if err := config.Save(configPath, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "init error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("initialized profile %s at %s\n", cfg.ProfileName, *profilePath)
 }
 
 func pingCommand(args []string) error {
@@ -205,9 +223,9 @@ func watchCommand(args []string) error {
 	socket := fs.String("socket", "", "Override socket path")
 	_ = fs.Parse(args)
 
-	socketPath := *socket
-	if socketPath == "" {
-		socketPath = filepath.Join(*profile, "ipc.sock")
+	socketPath, err := resolveSocketPath(*profile, *socket)
+	if err != nil {
+		return err
 	}
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
@@ -269,9 +287,9 @@ func vcsCommand(args []string) error {
 }
 
 func rpcCall(profile, socketOverride, method string, params json.RawMessage) (*ipc.Response, error) {
-	socketPath := socketOverride
-	if socketPath == "" {
-		socketPath = filepath.Join(profile, "ipc.sock")
+	socketPath, err := resolveSocketPath(profile, socketOverride)
+	if err != nil {
+		return nil, err
 	}
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
@@ -303,4 +321,18 @@ func rpcCall(profile, socketOverride, method string, params json.RawMessage) (*i
 		return nil, fmt.Errorf("daemon error: %s (%s)", resp.Error.Message, resp.Error.Code)
 	}
 	return &resp, nil
+}
+
+func resolveSocketPath(profile, override string) (string, error) {
+	if override != "" {
+		return override, nil
+	}
+	cfg, err := config.LoadProfile(profile)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("config not found in %s (run 's0f init --profile %s')", profile, profile)
+		}
+		return "", fmt.Errorf("load config: %w", err)
+	}
+	return config.ResolvePath(profile, cfg.IPC.SocketPath), nil
 }

@@ -44,7 +44,7 @@
 
 ## 4. CLI Usage Patterns
 ```
-s0f init --profile ./_dev_profile
+s0f init --profile ./_dev_profile --name dev
 s0f ping --profile ./_dev_profile
 s0f tree --profile ./_dev_profile
 s0f apply --profile ./_dev_profile --ops '{"ops":[{"type":"add_folder","parentId":"root","title":"Example"}]}'
