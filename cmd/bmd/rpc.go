@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	"github.com/rexliu/s0f/pkg/core"
 	"github.com/rexliu/s0f/pkg/ipc"
+	gitvcs "github.com/rexliu/s0f/pkg/vcs/git"
 )
 
 func (d *daemon) registerHandlers(srv *ipc.Server) {
@@ -46,13 +48,24 @@ func (d *daemon) handleApplyOps(ctx context.Context, params json.RawMessage) (an
 	if err != nil {
 		return nil, ipc.Errorf("STORAGE_ERROR", err.Error(), nil)
 	}
+	status := vcsStatus{Pending: true}
+	if err := writeSnapshot(d.profileDir, updated); err != nil {
+		d.logger.Printf("snapshot write failed: %v", err)
+	} else if d.repo != nil {
+		files := []string{d.store.Path(), filepath.Join(d.profileDir, "snapshot.json")}
+		gstatus, err := d.repo.Commit(ctx, fmt.Sprintf("apply %d ops", len(ops)), files)
+		if err != nil {
+			d.logger.Printf("commit failed: %v", err)
+		} else {
+			status = fromGitStatus(gstatus)
+			if gstatus.Hash != "" {
+				updated.Version = gstatus.Hash
+			}
+		}
+	}
 	resp := map[string]any{
-		"tree": updated,
-		"vcsStatus": vcsStatus{
-			Committed: false,
-			Pending:   true,
-			Hash:      "",
-		},
+		"tree":      updated,
+		"vcsStatus": status,
 	}
 	return resp, nil
 }
@@ -61,6 +74,14 @@ type vcsStatus struct {
 	Committed bool   `json:"committed"`
 	Pending   bool   `json:"pending"`
 	Hash      string `json:"hash"`
+}
+
+func fromGitStatus(status gitvcs.Status) vcsStatus {
+	return vcsStatus{
+		Committed: status.Committed,
+		Pending:   status.Pending,
+		Hash:      status.Hash,
+	}
 }
 
 type applyOpsParams struct {

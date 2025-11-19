@@ -14,6 +14,7 @@ import (
 	"github.com/rexliu/s0f/pkg/ipc"
 	"github.com/rexliu/s0f/pkg/logging"
 	"github.com/rexliu/s0f/pkg/storage/sqlite"
+	gitvcs "github.com/rexliu/s0f/pkg/vcs/git"
 )
 
 func main() {
@@ -34,8 +35,10 @@ func main() {
 }
 
 type daemon struct {
-	store  *sqlite.Store
-	logger *logging.Logger
+	store      *sqlite.Store
+	logger     *logging.Logger
+	repo       *gitvcs.Repo
+	profileDir string
 }
 
 func run(ctx context.Context, profileDir, socketOverride string, logger *logging.Logger) error {
@@ -64,7 +67,12 @@ func run(ctx context.Context, profileDir, socketOverride string, logger *logging
 	}
 
 	srv := ipc.NewServer(logger)
-	d := &daemon{store: store, logger: logger}
+	vcRepo, err := gitvcs.Init(profileDir)
+	if err != nil {
+		logger.Printf("warning: failed to init git repo: %v", err)
+	}
+
+	d := &daemon{store: store, logger: logger, repo: vcRepo, profileDir: profileDir}
 	d.registerHandlers(srv)
 
 	if err := srv.Start(ctx, socketPath); err != nil {

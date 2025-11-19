@@ -21,6 +21,11 @@ type Store struct {
 	path string
 }
 
+// Path returns the underlying SQLite file path.
+func (s *Store) Path() string {
+	return s.path
+}
+
 // Open initializes a SQLite database at path.
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
