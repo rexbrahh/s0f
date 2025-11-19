@@ -48,6 +48,8 @@ s0f init --profile ./_dev_profile
 s0f ping --profile ./_dev_profile
 s0f tree --profile ./_dev_profile
 s0f apply --profile ./_dev_profile --ops '{"ops":[{"type":"add_folder","parentId":"root","title":"Example"}]}'
+s0f vcs push --profile ./_dev_profile
+s0f vcs pull --profile ./_dev_profile
 ```
 - User-facing verbs (init/ping/tree/apply, later add/move/delete/service/vcs) always route over IPC so behavior mirrors GUI clients.
 - Diagnostics (`s0f diag`, `s0f db check`, `s0f vcs retry`) may touch SQLite or Git directly but must call out that they bypass the daemon API surface.

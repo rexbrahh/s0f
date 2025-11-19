@@ -15,6 +15,8 @@ func (d *daemon) registerHandlers(srv *ipc.Server) {
 	srv.Register("ping", pingHandler(d.logger))
 	srv.Register("get_tree", d.handleGetTree)
 	srv.Register("apply_ops", d.handleApplyOps)
+	srv.Register("vcs_push", d.handleVCSPush)
+	srv.Register("vcs_pull", d.handleVCSPull)
 }
 
 func (d *daemon) handleGetTree(ctx context.Context, params json.RawMessage) (any, *ipc.Error) {
@@ -68,6 +70,30 @@ func (d *daemon) handleApplyOps(ctx context.Context, params json.RawMessage) (an
 		"vcsStatus": status,
 	}
 	return resp, nil
+}
+
+func (d *daemon) handleVCSPush(ctx context.Context, params json.RawMessage) (any, *ipc.Error) {
+	if d.repo == nil {
+		return nil, ipc.Errorf("VCS_ERROR", "git repo unavailable", nil)
+	}
+	if err := d.repo.Push(ctx); err != nil {
+		return nil, ipc.Errorf("VCS_ERROR", err.Error(), nil)
+	}
+	return map[string]any{"status": "ok"}, nil
+}
+
+func (d *daemon) handleVCSPull(ctx context.Context, params json.RawMessage) (any, *ipc.Error) {
+	if d.repo == nil {
+		return nil, ipc.Errorf("VCS_ERROR", "git repo unavailable", nil)
+	}
+	if err := d.repo.Pull(ctx); err != nil {
+		return nil, ipc.Errorf("VCS_ERROR", err.Error(), nil)
+	}
+	tree, err := d.store.LoadTree(ctx)
+	if err != nil {
+		return nil, ipc.Errorf("STORAGE_ERROR", err.Error(), nil)
+	}
+	return map[string]any{"tree": tree}, nil
 }
 
 type vcsStatus struct {

@@ -40,6 +40,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "apply error: %v\n", err)
 			os.Exit(1)
 		}
+	case "vcs":
+		if err := vcsCommand(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "vcs error: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", os.Args[1])
 		usage()
@@ -54,6 +59,7 @@ func usage() {
 	fmt.Println("  ping      Call the daemon ping endpoint via IPC")
 	fmt.Println("  tree      Fetch the current bookmark tree from the daemon")
 	fmt.Println("  apply     Send apply_ops payload (JSON) to the daemon")
+	fmt.Println("  vcs push|pull    Trigger VCS push or pull via the daemon")
 	fmt.Println("  version   Print CLI version")
 }
 
@@ -146,6 +152,38 @@ func applyCommand(args []string) error {
 		return fmt.Errorf("decode response: %w", err)
 	}
 	out, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(out))
+	return nil
+}
+
+func vcsCommand(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: s0f vcs <push|pull> [options]")
+	}
+	sub := args[0]
+	fs := flag.NewFlagSet("vcs", flag.ExitOnError)
+	profile := fs.String("profile", "./_dev_profile", "Profile directory")
+	socket := fs.String("socket", "", "Override socket path")
+	_ = fs.Parse(args[1:])
+
+	var method string
+	switch sub {
+	case "push":
+		method = "vcs_push"
+	case "pull":
+		method = "vcs_pull"
+	default:
+		return fmt.Errorf("unknown vcs subcommand %q", sub)
+	}
+
+	resp, err := rpcCall(*profile, *socket, method, json.RawMessage(`{}`))
+	if err != nil {
+		return err
+	}
+	out, err := json.MarshalIndent(resp.Result, "", "  ")
 	if err != nil {
 		return err
 	}
