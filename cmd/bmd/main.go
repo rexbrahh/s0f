@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rexliu/s0f/pkg/core"
 	"github.com/rexliu/s0f/pkg/ipc"
 	"github.com/rexliu/s0f/pkg/logging"
 	"github.com/rexliu/s0f/pkg/storage/sqlite"
@@ -39,6 +40,7 @@ type daemon struct {
 	logger     *logging.Logger
 	repo       *gitvcs.Repo
 	profileDir string
+	eventHub   *eventHub
 }
 
 func run(ctx context.Context, profileDir, socketOverride string, logger *logging.Logger) error {
@@ -72,7 +74,8 @@ func run(ctx context.Context, profileDir, socketOverride string, logger *logging
 		logger.Printf("warning: failed to init git repo: %v", err)
 	}
 
-	d := &daemon{store: store, logger: logger, repo: vcRepo, profileDir: profileDir}
+	eh := newEventHub(logger)
+	d := &daemon{store: store, logger: logger, repo: vcRepo, profileDir: profileDir, eventHub: eh}
 	d.registerHandlers(srv)
 
 	if err := srv.Start(ctx, socketPath); err != nil {
@@ -112,4 +115,17 @@ func pingHandler(logger *logging.Logger) ipc.HandlerFunc {
 		}
 		return map[string]any{"now": now}, nil
 	}
+}
+func (d *daemon) broadcastTreeChanged(tree core.Tree) {
+	if d.eventHub == nil {
+		return
+	}
+	event := map[string]any{
+		"kind":           "event",
+		"event":          "tree_changed",
+		"version":        tree.Version,
+		"changedNodeIds": []string{},
+		"generatedAt":    time.Now().UnixMilli(),
+	}
+	d.eventHub.broadcast(event)
 }

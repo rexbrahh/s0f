@@ -14,6 +14,9 @@ import (
 // HandlerFunc processes RPC params and returns a result or structured error.
 type HandlerFunc func(context.Context, json.RawMessage) (any, *Error)
 
+// StreamHandler handles long-lived event streams.
+type StreamHandler func(context.Context) (<-chan []byte, *Error)
+
 // Logger is satisfied by logging.Logger; kept minimal to avoid dependency cycles.
 type Logger interface {
 	Printf(format string, v ...any)
@@ -24,6 +27,7 @@ type Server struct {
 	ln       net.Listener
 	mu       sync.RWMutex
 	handlers map[string]HandlerFunc
+	streams  map[string]StreamHandler
 	closed   bool
 	logger   Logger
 }
@@ -32,6 +36,7 @@ type Server struct {
 func NewServer(logger Logger) *Server {
 	return &Server{
 		handlers: make(map[string]HandlerFunc),
+		streams:  make(map[string]StreamHandler),
 		logger:   logger,
 	}
 }
@@ -41,6 +46,13 @@ func (s *Server) Register(method string, handler HandlerFunc) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.handlers[method] = handler
+}
+
+// RegisterStream registers a stream handler.
+func (s *Server) RegisterStream(method string, handler StreamHandler) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.streams[method] = handler
 }
 
 // Start begins accepting connections on endpoint.
@@ -84,27 +96,39 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 			continue
 		}
 		traceID := fmt.Sprintf("ipc-%d", time.Now().UnixNano())
-		handler := s.lookupHandler(req.Type)
-		if handler == nil {
-			s.writeError(conn, req.ID, "INVALID_REQUEST", "unknown method", map[string]any{"method": req.Type, "traceId": traceID})
+		if handler := s.lookupHandler(req.Type); handler != nil {
+			result, rpcErr := handler(ctx, req.Params)
+			resp := Response{ID: req.ID, TraceID: traceID}
+			if rpcErr != nil {
+				resp.Error = rpcErr
+			} else {
+				raw, err := json.Marshal(result)
+				if err != nil {
+					s.writeError(conn, req.ID, "INTERNAL", err.Error(), map[string]any{"traceId": traceID})
+					continue
+				}
+				resp.OK = true
+				resp.Result = raw
+			}
+			if err := s.writeResponse(conn, resp); err != nil {
+				return
+			}
 			continue
 		}
-		result, rpcErr := handler(ctx, req.Params)
-		resp := Response{ID: req.ID, TraceID: traceID}
-		if rpcErr != nil {
-			resp.Error = rpcErr
-		} else {
-			raw, err := json.Marshal(result)
-			if err != nil {
-				s.writeError(conn, req.ID, "INTERNAL", err.Error(), map[string]any{"traceId": traceID})
+		if stream := s.lookupStream(req.Type); stream != nil {
+			ch, rpcErr := stream(ctx)
+			if rpcErr != nil {
+				s.writeError(conn, req.ID, rpcErr.Code, rpcErr.Message, rpcErr.Details)
 				continue
 			}
-			resp.OK = true
-			resp.Result = raw
+			for event := range ch {
+				if err := writeFrame(conn, event); err != nil {
+					return
+				}
+			}
+			continue
 		}
-		if err := s.writeResponse(conn, resp); err != nil {
-			return
-		}
+		s.writeError(conn, req.ID, "INVALID_REQUEST", "unknown method", map[string]any{"method": req.Type, "traceId": traceID})
 	}
 }
 
@@ -112,6 +136,12 @@ func (s *Server) lookupHandler(method string) HandlerFunc {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.handlers[method]
+}
+
+func (s *Server) lookupStream(method string) StreamHandler {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.streams[method]
 }
 
 func (s *Server) writeResponse(conn net.Conn, resp Response) error {

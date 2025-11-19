@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/rexliu/s0f/pkg/core"
 	"github.com/rexliu/s0f/pkg/ipc"
@@ -17,6 +18,7 @@ func (d *daemon) registerHandlers(srv *ipc.Server) {
 	srv.Register("apply_ops", d.handleApplyOps)
 	srv.Register("vcs_push", d.handleVCSPush)
 	srv.Register("vcs_pull", d.handleVCSPull)
+	srv.Register("search", d.handleSearch)
 }
 
 func (d *daemon) handleGetTree(ctx context.Context, params json.RawMessage) (any, *ipc.Error) {
@@ -69,6 +71,7 @@ func (d *daemon) handleApplyOps(ctx context.Context, params json.RawMessage) (an
 		"tree":      updated,
 		"vcsStatus": status,
 	}
+	d.broadcastTreeChanged(updated)
 	return resp, nil
 }
 
@@ -187,4 +190,48 @@ func optStr(val string) *string {
 	}
 	s := val
 	return &s
+}
+func (d *daemon) handleSearch(ctx context.Context, params json.RawMessage) (any, *ipc.Error) {
+	var req struct {
+		Query string `json:"query"`
+		Limit int    `json:"limit"`
+	}
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, ipc.Errorf("INVALID_REQUEST", "invalid search params", nil)
+	}
+	if req.Limit <= 0 || req.Limit > 500 {
+		req.Limit = 50
+	}
+	tree, err := d.store.LoadTree(ctx)
+	if err != nil {
+		return nil, ipc.Errorf("STORAGE_ERROR", err.Error(), nil)
+	}
+	query := strings.ToLower(req.Query)
+	results := make([]map[string]any, 0)
+	for _, node := range tree.Nodes {
+		if len(results) >= req.Limit {
+			break
+		}
+		if query == "" || strings.Contains(strings.ToLower(node.Title), query) || (node.URL != nil && strings.Contains(strings.ToLower(*node.URL), query)) {
+			results = append(results, map[string]any{
+				"id":    node.ID,
+				"title": node.Title,
+				"url":   node.URL,
+				"kind":  node.Kind,
+			})
+		}
+	}
+	return map[string]any{"matches": results}, nil
+}
+
+func (d *daemon) handleSubscribeEvents(ctx context.Context) (<-chan []byte, *ipc.Error) {
+	if d.eventHub == nil {
+		return nil, ipc.Errorf("INTERNAL", "event hub unavailable", nil)
+	}
+	client := d.eventHub.register()
+	go func() {
+		<-ctx.Done()
+		d.eventHub.unregister(client)
+	}()
+	return client.send, nil
 }

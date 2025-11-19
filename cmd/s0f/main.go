@@ -40,6 +40,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "apply error: %v\n", err)
 			os.Exit(1)
 		}
+	case "search":
+		if err := searchCommand(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "search error: %v\n", err)
+			os.Exit(1)
+		}
 	case "vcs":
 		if err := vcsCommand(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "vcs error: %v\n", err)
@@ -59,6 +64,7 @@ func usage() {
 	fmt.Println("  ping      Call the daemon ping endpoint via IPC")
 	fmt.Println("  tree      Fetch the current bookmark tree from the daemon")
 	fmt.Println("  apply     Send apply_ops payload (JSON) to the daemon")
+	fmt.Println("  search    Run substring search over title/url")
 	fmt.Println("  vcs push|pull    Trigger VCS push or pull via the daemon")
 	fmt.Println("  version   Print CLI version")
 }
@@ -152,6 +158,34 @@ func applyCommand(args []string) error {
 		return fmt.Errorf("decode response: %w", err)
 	}
 	out, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(out))
+	return nil
+}
+
+func searchCommand(args []string) error {
+	fs := flag.NewFlagSet("search", flag.ExitOnError)
+	profile := fs.String("profile", "./_dev_profile", "Profile directory")
+	socket := fs.String("socket", "", "Override socket path")
+	query := fs.String("query", "", "Search query (substring)")
+	limit := fs.Int("limit", 50, "Maximum results (1-500)")
+	_ = fs.Parse(args)
+
+	payload := map[string]any{
+		"query": *query,
+		"limit": *limit,
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	resp, err := rpcCall(*profile, *socket, "search", raw)
+	if err != nil {
+		return err
+	}
+	out, err := json.MarshalIndent(resp.Result, "", "  ")
 	if err != nil {
 		return err
 	}
