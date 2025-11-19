@@ -57,6 +57,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "diag error: %v\n", err)
 			os.Exit(1)
 		}
+	case "remote":
+		if err := remoteCommand(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "remote error: %v\n", err)
+			os.Exit(1)
+		}
 	case "vcs":
 		if err := vcsCommand(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "vcs error: %v\n", err)
@@ -79,6 +84,7 @@ func usage() {
 	fmt.Println("  search    Run substring search over title/url")
 	fmt.Println("  watch     Stream tree_changed events from the daemon")
 	fmt.Println("  diag      Print profile configuration paths")
+	fmt.Println("  remote    Manage Git remote configuration (set/show)")
 	fmt.Println("  vcs push|pull    Trigger VCS push or pull via the daemon")
 	fmt.Println("  version   Print CLI version")
 }
@@ -276,7 +282,59 @@ func diagCommand(args []string) error {
 		fmt.Printf("Log File: %s\n", config.ResolvePath(*profile, cfg.Logging.FilePath))
 	}
 	fmt.Printf("VCS Branch: %s (enabled=%t)\n", cfg.VCS.Branch, cfg.VCS.Enabled)
+	if cfg.VCS.Remote.URL != "" {
+		fmt.Printf("Remote URL: %s\n", cfg.VCS.Remote.URL)
+	}
 	return nil
+}
+
+func remoteCommand(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: s0f remote <set|show> [options]")
+	}
+	sub := args[0]
+	switch sub {
+	case "set":
+		fs := flag.NewFlagSet("remote set", flag.ExitOnError)
+		profile := fs.String("profile", "./_dev_profile", "Profile directory")
+		url := fs.String("url", "", "Remote Git URL")
+		cred := fs.String("credential", "", "Credential reference (optional)")
+		_ = fs.Parse(args[1:])
+		if *url == "" {
+			return fmt.Errorf("--url is required")
+		}
+		cfg, err := config.LoadProfile(*profile)
+		if err != nil {
+			return err
+		}
+		cfg.VCS.Remote.URL = *url
+		cfg.VCS.Remote.CredentialRef = *cred
+		cfg.VCS.Enabled = true
+		if err := config.Save(filepath.Join(*profile, "config.toml"), cfg); err != nil {
+			return err
+		}
+		fmt.Printf("remote set to %s\n", *url)
+		return nil
+	case "show":
+		fs := flag.NewFlagSet("remote show", flag.ExitOnError)
+		profile := fs.String("profile", "./_dev_profile", "Profile directory")
+		_ = fs.Parse(args[1:])
+		cfg, err := config.LoadProfile(*profile)
+		if err != nil {
+			return err
+		}
+		if cfg.VCS.Remote.URL == "" {
+			fmt.Println("remote not configured")
+		} else {
+			fmt.Printf("remote URL: %s\n", cfg.VCS.Remote.URL)
+			if cfg.VCS.Remote.CredentialRef != "" {
+				fmt.Printf("credential ref: %s\n", cfg.VCS.Remote.CredentialRef)
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown remote subcommand %q", sub)
+	}
 }
 
 func vcsCommand(args []string) error {

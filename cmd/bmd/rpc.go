@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -80,8 +81,21 @@ func (d *daemon) handleVCSPush(ctx context.Context, params json.RawMessage) (any
 	if d.repo == nil {
 		return nil, ipc.Errorf("VCS_ERROR", "git repo unavailable", nil)
 	}
-	if err := d.repo.Push(ctx); err != nil {
+	if d.cfg.VCS.Remote.URL == "" {
+		return nil, ipc.Errorf("VCS_REMOTE_NOT_CONFIGURED", "remote not configured", nil)
+	}
+	if err := d.repo.EnsureRemote("origin", d.cfg.VCS.Remote.URL); err != nil {
 		return nil, ipc.Errorf("VCS_ERROR", err.Error(), nil)
+	}
+	if err := d.repo.Push(ctx); err != nil {
+		switch {
+		case errors.Is(err, gitvcs.ErrNonFastForward):
+			return nil, ipc.Errorf("VCS_NOT_FAST_FORWARD", err.Error(), nil)
+		case errors.Is(err, gitvcs.ErrRemoteNotConfigured):
+			return nil, ipc.Errorf("VCS_REMOTE_NOT_CONFIGURED", err.Error(), nil)
+		default:
+			return nil, ipc.Errorf("VCS_ERROR", err.Error(), nil)
+		}
 	}
 	return map[string]any{"status": "ok"}, nil
 }
@@ -90,8 +104,23 @@ func (d *daemon) handleVCSPull(ctx context.Context, params json.RawMessage) (any
 	if d.repo == nil {
 		return nil, ipc.Errorf("VCS_ERROR", "git repo unavailable", nil)
 	}
-	if err := d.repo.Pull(ctx); err != nil {
+	if d.cfg.VCS.Remote.URL == "" {
+		return nil, ipc.Errorf("VCS_REMOTE_NOT_CONFIGURED", "remote not configured", nil)
+	}
+	if err := d.repo.EnsureRemote("origin", d.cfg.VCS.Remote.URL); err != nil {
 		return nil, ipc.Errorf("VCS_ERROR", err.Error(), nil)
+	}
+	if err := d.repo.Pull(ctx, d.cfg.VCS.Branch); err != nil {
+		switch {
+		case errors.Is(err, gitvcs.ErrLocalCommitsPresent):
+			return nil, ipc.Errorf("VCS_LOCAL_CHANGES_PRESENT", err.Error(), nil)
+		case errors.Is(err, gitvcs.ErrNonFastForward):
+			return nil, ipc.Errorf("VCS_NOT_FAST_FORWARD", err.Error(), nil)
+		case errors.Is(err, gitvcs.ErrRemoteNotConfigured):
+			return nil, ipc.Errorf("VCS_REMOTE_NOT_CONFIGURED", err.Error(), nil)
+		default:
+			return nil, ipc.Errorf("VCS_ERROR", err.Error(), nil)
+		}
 	}
 	tree, err := d.store.LoadTree(ctx)
 	if err != nil {

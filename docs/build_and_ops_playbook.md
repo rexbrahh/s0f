@@ -73,6 +73,10 @@ enabled = false
 branch = "main"
 autoPush = false
 
+[vcs.remote]
+url = "git@github.com:example/s0f-sync.git"
+credentialRef = "keychain:s0f-sync"
+
 [ipc]
 socketPath = "/Users/alice/.s0f/dev/ipc.sock"
 requireToken = false
@@ -90,7 +94,7 @@ fileMaxSizeMB = 10
 1. **First install:** `s0f init --profile <dir>` ensures directory perms (0700), boots daemon once, creates SQLite DB + Git repo, and prints socket path/profile ID.
 2. **Log rotation:** Daemon logs live under `<profile>/log/` (rotating file size/backups per config). `s0f diag` tails the last 200 log lines plus 10 Git commits.
 3. **Backup & restore:** Backups are simple `git clone` of the repo folder. Restore by cloning into a new profile and running `s0f migrate` if schema version differs.
-4. **Remote setup:** `s0f remote set <url>` stores remote metadata; creds go in platform secure storage. `s0f push` enforces fast-forward and prints upstream hash. `s0f pull` is manual and returns `VCS_LOCAL_CHANGES_PRESENT` if local commits exist until the user pushes or resets. No daemon-side background sync jobs exist.
+4. **Remote setup:** `s0f remote set --url <git-url>` writes remote metadata (URL + optional credential ref) to `config.toml` and `s0f remote show` displays it. After configuring, `s0f vcs push` enforces fast-forward and prints upstream hash, and `s0f vcs pull` fails with `VCS_LOCAL_CHANGES_PRESENT` if local commits exist until the user pushes or resets. No daemon-side background sync jobs exist.
 5. **Incident checklist:**
    - `s0f diag` output + commit log
    - Verify socket perms remain `0700`
