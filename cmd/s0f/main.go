@@ -272,6 +272,9 @@ func diagCommand(args []string) error {
 	fmt.Printf("Config: %s\n", filepath.Join(*profile, "config.toml"))
 	fmt.Printf("DB Path: %s\n", config.ResolvePath(*profile, cfg.Storage.DBPath))
 	fmt.Printf("Socket: %s\n", config.ResolvePath(*profile, cfg.IPC.SocketPath))
+	if cfg.Logging.FilePath != "" {
+		fmt.Printf("Log File: %s\n", config.ResolvePath(*profile, cfg.Logging.FilePath))
+	}
 	fmt.Printf("VCS Branch: %s (enabled=%t)\n", cfg.VCS.Branch, cfg.VCS.Enabled)
 	return nil
 }

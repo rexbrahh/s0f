@@ -39,9 +39,10 @@ type VCSConfig struct {
 
 // LoggingConfig defines basic logging knobs.
 type LoggingConfig struct {
-	Level       string `toml:"level"`
-	FileMaxSize int    `toml:"fileMaxSizeMB"`
-	FileBackups int    `toml:"fileMaxBackups"`
+    Level       string `toml:"level"`
+    FilePath    string `toml:"filePath"`
+    FileMaxSize int    `toml:"fileMaxSizeMB"`
+    FileBackups int    `toml:"fileMaxBackups"`
 }
 
 // ProfileConfig aggregates service configuration for a profile.

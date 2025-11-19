@@ -40,6 +40,9 @@ func main() {
 	}
 
 	logger := logging.New("bmd")
+	if err := logger.Configure(cfg.Logging); err != nil {
+		fmt.Fprintf(os.Stderr, "logging setup failed: %v\n", err)
+	}
 	logger.Printf("starting daemon profile=%s dir=%s", cfg.ProfileName, profileDir)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

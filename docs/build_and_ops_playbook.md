@@ -76,9 +76,15 @@ autoPush = false
 [ipc]
 socketPath = "/Users/alice/.s0f/dev/ipc.sock"
 requireToken = false
+
+[logging]
+level = "info"
+filePath = "/Users/alice/.s0f/dev/logs/daemon.log"
+fileMaxSizeMB = 10
 ```
 
 - Add tables such as `[logging]` or `[vcs.remote]` as needed. `ipc.requireToken` defaults to `false`; when enabled you must configure `tokenRef` (and clients must send the shared secret before the daemon accepts a connection).
+- `[logging]` controls daemon output; set `filePath` to enable log files with simple size-based rotation, or leave blank to stay on stdout.
 
 ## 6. Ops Runbook
 1. **First install:** `s0f init --profile <dir>` ensures directory perms (0700), boots daemon once, creates SQLite DB + Git repo, and prints socket path/profile ID.
