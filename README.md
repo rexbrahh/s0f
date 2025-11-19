@@ -9,3 +9,23 @@ Local-first bookmark runtime with a Go daemon, SwiftUI macOS client, and Chrome 
 - Architecture and implementation docs in `docs/`.
 
 Each folder includes TODOs describing the next implementation steps.
+
+## Project Layout
+
+- `cmd/bmd`: daemon entrypoint (loads `config.toml`, exposes IPC)
+- `cmd/s0f`: CLI for profile init and sending RPCs
+- `pkg/core`, `pkg/storage`, `pkg/vcs`, `pkg/ipc`: shared libraries
+- `cmd/bmd-bridge` + `ui/chrome`: Native Messaging host and MV3 scaffold
+- `scripts/`: helper scripts (`dev-profile.sh`, `smoke.sh`)
+
+## Quick Start (CLI-only)
+
+```
+make build-cli build-daemon
+./bin/s0f init --profile ./_dev_profile --name dev
+./bin/bmd --profile ./_dev_profile &
+./bin/s0f apply --profile ./_dev_profile --ops '{"ops":[{"type":"add_folder","parentId":"root","title":"Example"}]}'
+./bin/s0f tree --profile ./_dev_profile
+```
+
+Run `make smoke` (or `scripts/smoke.sh`) for an end-to-end sanity check that starts the daemon, applies ops, and prints the resulting tree.
