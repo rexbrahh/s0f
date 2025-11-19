@@ -1,0 +1,26 @@
+# Binaries
+/bin/
+*.exe
+*.dll
+*.so
+
+# Go
+*.test
+coverage.out
+
+# macOS / Xcode
+.DS_Store
+xcuserdata/
+DerivedData/
+
+# Node
+node_modules/
+ui/chrome/dist/
+
+# Profiles
+_dev_profile/
+profiles/
+
+# Swift Package Manager
+.swiftpm/
+.build/
