@@ -33,6 +33,11 @@ func main() {
 	}
 }
 
+type daemon struct {
+	store  *sqlite.Store
+	logger *logging.Logger
+}
+
 func run(ctx context.Context, profileDir, socketOverride string, logger *logging.Logger) error {
 	if err := os.MkdirAll(profileDir, 0o700); err != nil {
 		return err
@@ -59,7 +64,8 @@ func run(ctx context.Context, profileDir, socketOverride string, logger *logging
 	}
 
 	srv := ipc.NewServer(logger)
-	srv.Register("ping", pingHandler(logger))
+	d := &daemon{store: store, logger: logger}
+	d.registerHandlers(srv)
 
 	if err := srv.Start(ctx, socketPath); err != nil {
 		return fmt.Errorf("start ipc: %w", err)

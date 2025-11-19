@@ -45,12 +45,11 @@
 ## 4. CLI Usage Patterns
 ```
 s0f init --profile ./_dev_profile
-s0f add --parent root --title "Example" --url "https://example.com"
-s0f list
-s0f service install --profile <path>
-s0f vcs push
+s0f ping --profile ./_dev_profile
+s0f tree --profile ./_dev_profile
+s0f apply --profile ./_dev_profile --ops '{"ops":[{"type":"add_folder","parentId":"root","title":"Example"}]}'
 ```
-- User-facing verbs (`init`, `add`, `move`, `delete`, `list`, `service`, `vcs`) always route over IPC so behavior mirrors GUI clients.
+- User-facing verbs (init/ping/tree/apply, later add/move/delete/service/vcs) always route over IPC so behavior mirrors GUI clients.
 - Diagnostics (`s0f diag`, `s0f db check`, `s0f vcs retry`) may touch SQLite or Git directly but must call out that they bypass the daemon API surface.
 
 ## 5. Config Schema and Tokens
