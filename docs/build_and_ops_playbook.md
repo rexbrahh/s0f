@@ -49,6 +49,7 @@ s0f ping --profile ./_dev_profile
 s0f tree --profile ./_dev_profile
 s0f apply --profile ./_dev_profile --ops '{"ops":[{"type":"add_folder","parentId":"root","title":"Example"}]}'
 s0f search --profile ./_dev_profile --query example
+s0f watch --profile ./_dev_profile
 s0f vcs push --profile ./_dev_profile
 s0f vcs pull --profile ./_dev_profile
 ```

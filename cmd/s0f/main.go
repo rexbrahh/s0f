@@ -45,6 +45,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "search error: %v\n", err)
 			os.Exit(1)
 		}
+	case "watch":
+		if err := watchCommand(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "watch error: %v\n", err)
+			os.Exit(1)
+		}
 	case "vcs":
 		if err := vcsCommand(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "vcs error: %v\n", err)
@@ -65,6 +70,7 @@ func usage() {
 	fmt.Println("  tree      Fetch the current bookmark tree from the daemon")
 	fmt.Println("  apply     Send apply_ops payload (JSON) to the daemon")
 	fmt.Println("  search    Run substring search over title/url")
+	fmt.Println("  watch     Stream tree_changed events from the daemon")
 	fmt.Println("  vcs push|pull    Trigger VCS push or pull via the daemon")
 	fmt.Println("  version   Print CLI version")
 }
@@ -191,6 +197,43 @@ func searchCommand(args []string) error {
 	}
 	fmt.Println(string(out))
 	return nil
+}
+
+func watchCommand(args []string) error {
+	fs := flag.NewFlagSet("watch", flag.ExitOnError)
+	profile := fs.String("profile", "./_dev_profile", "Profile directory")
+	socket := fs.String("socket", "", "Override socket path")
+	_ = fs.Parse(args)
+
+	socketPath := *socket
+	if socketPath == "" {
+		socketPath = filepath.Join(*profile, "ipc.sock")
+	}
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		return fmt.Errorf("dial %s: %w", socketPath, err)
+	}
+	defer conn.Close()
+
+	req := ipc.Request{
+		ID:   fmt.Sprintf("cli-watch-%d", time.Now().UnixNano()),
+		Type: "subscribe_events",
+	}
+	payload, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	if err := ipc.WriteFrame(conn, payload); err != nil {
+		return err
+	}
+	fmt.Println("Subscribed to tree_changed events (Ctrl+C to exit)")
+	for {
+		frame, err := ipc.ReadFrame(conn)
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(frame))
+	}
 }
 
 func vcsCommand(args []string) error {
