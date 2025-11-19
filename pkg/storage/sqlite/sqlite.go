@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -157,6 +158,192 @@ func (s *Store) LoadTree(ctx context.Context) (core.Tree, error) {
 
 // ApplyOps applies a batch atomically.
 func (s *Store) ApplyOps(ctx context.Context, ops []core.Op) (core.Tree, error) {
-	// TODO: implement transactional batch application.
-	return core.Tree{}, errors.New("ApplyOps not implemented")
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return core.Tree{}, err
+	}
+	for _, op := range ops {
+		switch v := op.(type) {
+		case core.AddFolderOp:
+			if err := s.applyAddFolder(ctx, tx, v); err != nil {
+				tx.Rollback()
+				return core.Tree{}, err
+			}
+		case core.AddBookmarkOp:
+			if err := s.applyAddBookmark(ctx, tx, v); err != nil {
+				tx.Rollback()
+				return core.Tree{}, err
+			}
+		case core.RenameNodeOp:
+			if err := s.applyRename(ctx, tx, v); err != nil {
+				tx.Rollback()
+				return core.Tree{}, err
+			}
+		case core.MoveNodeOp:
+			if err := s.applyMove(ctx, tx, v); err != nil {
+				tx.Rollback()
+				return core.Tree{}, err
+			}
+		case core.DeleteNodeOp:
+			if err := s.applyDelete(ctx, tx, v.NodeID); err != nil {
+				tx.Rollback()
+				return core.Tree{}, err
+			}
+		case core.UpdateBookmarkOp:
+			if err := s.applyUpdateBookmark(ctx, tx, v); err != nil {
+				tx.Rollback()
+				return core.Tree{}, err
+			}
+		case core.SaveSessionOp:
+			if err := s.applySaveSession(ctx, tx, v); err != nil {
+				tx.Rollback()
+				return core.Tree{}, err
+			}
+		default:
+			tx.Rollback()
+			return core.Tree{}, fmt.Errorf("unsupported op %T", op)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return core.Tree{}, err
+	}
+	return s.LoadTree(ctx)
+}
+
+func (s *Store) applyAddFolder(ctx context.Context, tx *sql.Tx, op core.AddFolderOp) error {
+	ord, err := s.calcOrd(ctx, tx, op.ParentID, op.Index)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UnixMilli()
+	id := core.NewNodeID()
+	_, err = tx.ExecContext(ctx, `INSERT INTO nodes(id, parent_id, kind, title, ord, created_at, updated_at) VALUES(?,?,?,?,?,?,?)`,
+		id, op.ParentID, string(core.KindFolder), op.Title, ord, now, now)
+	return err
+}
+
+func (s *Store) applyAddBookmark(ctx context.Context, tx *sql.Tx, op core.AddBookmarkOp) error {
+	ord, err := s.calcOrd(ctx, tx, op.ParentID, op.Index)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UnixMilli()
+	id := core.NewNodeID()
+	_, err = tx.ExecContext(ctx, `INSERT INTO nodes(id, parent_id, kind, title, url, ord, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?)`,
+		id, op.ParentID, string(core.KindBookmark), op.Title, op.URL, ord, now, now)
+	return err
+}
+
+func (s *Store) applyRename(ctx context.Context, tx *sql.Tx, op core.RenameNodeOp) error {
+	res, err := tx.ExecContext(ctx, `UPDATE nodes SET title = ?, updated_at = ? WHERE id = ?`, op.Title, time.Now().UnixMilli(), op.NodeID)
+	return wrapRowsAffected(res, err)
+}
+
+func (s *Store) applyMove(ctx context.Context, tx *sql.Tx, op core.MoveNodeOp) error {
+	ord, err := s.calcOrd(ctx, tx, op.NewParentID, op.NewIndex)
+	if err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE nodes SET parent_id = ?, ord = ?, updated_at = ? WHERE id = ?`, op.NewParentID, ord, time.Now().UnixMilli(), op.NodeID)
+	return wrapRowsAffected(res, err)
+}
+
+func (s *Store) applyDelete(ctx context.Context, tx *sql.Tx, id string) error {
+	res, err := tx.ExecContext(ctx, `DELETE FROM nodes WHERE id = ?`, id)
+	return wrapRowsAffected(res, err)
+}
+
+func (s *Store) applyUpdateBookmark(ctx context.Context, tx *sql.Tx, op core.UpdateBookmarkOp) error {
+	setClauses := make([]string, 0, 3)
+	args := make([]any, 0, 4)
+	if op.Title != nil {
+		setClauses = append(setClauses, "title = ?")
+		args = append(args, *op.Title)
+	}
+	if op.URL != nil {
+		setClauses = append(setClauses, "url = ?")
+		args = append(args, *op.URL)
+	}
+	if len(setClauses) == 0 {
+		return nil
+	}
+	setClauses = append(setClauses, "updated_at = ?")
+	args = append(args, time.Now().UnixMilli(), op.NodeID)
+	stmt := fmt.Sprintf("UPDATE nodes SET %s WHERE id = ?", strings.Join(setClauses, ", "))
+	res, err := tx.ExecContext(ctx, stmt, args...)
+	return wrapRowsAffected(res, err)
+}
+
+func (s *Store) applySaveSession(ctx context.Context, tx *sql.Tx, op core.SaveSessionOp) error {
+	ord, err := s.calcOrd(ctx, tx, op.ParentID, op.Index)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UnixMilli()
+	folderID := core.NewNodeID()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO nodes(id, parent_id, kind, title, ord, created_at, updated_at) VALUES(?,?,?,?,?,?,?)`,
+		folderID, op.ParentID, string(core.KindFolder), op.Title, ord, now, now); err != nil {
+		return err
+	}
+	for idx, tab := range op.Tabs {
+		childOrd := float64(idx)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO nodes(id, parent_id, kind, title, url, ord, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?)`,
+			core.NewNodeID(), folderID, string(core.KindBookmark), tab.Title, tab.URL, childOrd, now, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) calcOrd(ctx context.Context, tx *sql.Tx, parentID string, index *int) (float64, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT ord FROM nodes WHERE parent_id = ? ORDER BY ord ASC`, parentID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	var ords []float64
+	for rows.Next() {
+		var ord float64
+		if err := rows.Scan(&ord); err != nil {
+			return 0, err
+		}
+		ords = append(ords, ord)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	pos := len(ords)
+	if index != nil {
+		pos = *index
+		if pos < 0 {
+			pos = 0
+		}
+		if pos > len(ords) {
+			pos = len(ords)
+		}
+	}
+	switch {
+	case len(ords) == 0:
+		return 0, nil
+	case pos == 0:
+		return ords[0] - 1, nil
+	case pos == len(ords):
+		return ords[len(ords)-1] + 1, nil
+	default:
+		return (ords[pos-1] + ords[pos]) / 2, nil
+	}
+}
+
+func wrapRowsAffected(res sql.Result, err error) error {
+	if err != nil {
+		return err
+	}
+	count, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return errors.New("no rows affected")
+	}
+	return nil
 }
