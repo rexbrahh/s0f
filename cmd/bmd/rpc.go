@@ -57,7 +57,8 @@ func (d *daemon) handleApplyOps(ctx context.Context, params json.RawMessage) (an
 		d.logger.Printf("snapshot write failed: %v", err)
 	} else if d.repo != nil {
 		files := []string{d.store.Path(), filepath.Join(d.profileDir, "snapshot.json")}
-		gstatus, err := d.repo.Commit(ctx, fmt.Sprintf("apply %d ops", len(ops)), files)
+		message := fmt.Sprintf("apply %d ops: %s", len(ops), payload.firstOpType())
+		gstatus, err := d.repo.Commit(ctx, message, files)
 		if err != nil {
 			d.logger.Printf("commit failed: %v", err)
 		} else {
@@ -190,6 +191,13 @@ func optStr(val string) *string {
 	}
 	s := val
 	return &s
+}
+
+func (p applyOpsParams) firstOpType() string {
+	if len(p.Ops) == 0 {
+		return "unknown"
+	}
+	return p.Ops[0].Type
 }
 func (d *daemon) handleSearch(ctx context.Context, params json.RawMessage) (any, *ipc.Error) {
 	var req struct {

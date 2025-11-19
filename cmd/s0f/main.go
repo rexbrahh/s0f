@@ -52,6 +52,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "watch error: %v\n", err)
 			os.Exit(1)
 		}
+	case "diag":
+		if err := diagCommand(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "diag error: %v\n", err)
+			os.Exit(1)
+		}
 	case "vcs":
 		if err := vcsCommand(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "vcs error: %v\n", err)
@@ -73,6 +78,7 @@ func usage() {
 	fmt.Println("  apply     Send apply_ops payload (JSON) to the daemon")
 	fmt.Println("  search    Run substring search over title/url")
 	fmt.Println("  watch     Stream tree_changed events from the daemon")
+	fmt.Println("  diag      Print profile configuration paths")
 	fmt.Println("  vcs push|pull    Trigger VCS push or pull via the daemon")
 	fmt.Println("  version   Print CLI version")
 }
@@ -252,6 +258,22 @@ func watchCommand(args []string) error {
 		}
 		fmt.Println(string(frame))
 	}
+}
+
+func diagCommand(args []string) error {
+	fs := flag.NewFlagSet("diag", flag.ExitOnError)
+	profile := fs.String("profile", "./_dev_profile", "Profile directory")
+	_ = fs.Parse(args)
+	cfg, err := config.LoadProfile(*profile)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Profile: %s\n", cfg.ProfileName)
+	fmt.Printf("Config: %s\n", filepath.Join(*profile, "config.toml"))
+	fmt.Printf("DB Path: %s\n", config.ResolvePath(*profile, cfg.Storage.DBPath))
+	fmt.Printf("Socket: %s\n", config.ResolvePath(*profile, cfg.IPC.SocketPath))
+	fmt.Printf("VCS Branch: %s (enabled=%t)\n", cfg.VCS.Branch, cfg.VCS.Enabled)
+	return nil
 }
 
 func vcsCommand(args []string) error {
