@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "s0f Capture",
+  "version": "0.1.0",
+  "description": "Quickly capture tabs into the s0f daemon.",
+  "permissions": ["tabs", "nativeMessaging"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Send tab to s0f"
+  }
+}

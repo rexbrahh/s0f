@@ -20,6 +20,7 @@ ui/chrome/dist/
 # Profiles
 _dev_profile/
 profiles/
+worktrees/
 
 # Swift Package Manager
 .swiftpm/

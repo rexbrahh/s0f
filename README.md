@@ -4,7 +4,7 @@ Local-first bookmark runtime with a Go daemon, SwiftUI macOS client, and Chrome 
 
 - Go packages (`pkg/`) that define core types, SQLite storage, Git integration, IPC, config, and logging helpers.
 - Command binaries (`cmd/`) for the daemon (`bmd`), CLI (`s0f`), and Chrome Native Messaging bridge (`bmd-bridge`).
-- Platform clients under `ui/` (SwiftUI macOS shell today; additional clients like Chrome or GTK will arrive later).
+- Platform clients under `ui/` (SwiftUI macOS shell and an MV3 Chrome extension scaffold; other UIs like GTK can follow).
 - Scripts for profile setup and platform service installation.
 - Architecture and implementation docs in `docs/`.
 
