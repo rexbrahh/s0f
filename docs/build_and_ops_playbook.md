@@ -56,61 +56,28 @@ s0f vcs pull --profile ./_dev_profile
 - User-facing verbs (init/ping/tree/apply, later add/move/delete/service/vcs) always route over IPC so behavior mirrors GUI clients.
 - Diagnostics (`s0f diag`, `s0f db check`, `s0f vcs retry`) may touch SQLite or Git directly but must call out that they bypass the daemon API surface.
 
-## 5. Config Schema and Tokens
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "BookmarkRuntimeConfig",
-  "type": "object",
-  "required": ["profileName", "storage", "vcs", "ipc"],
-  "properties": {
-    "profileName": {"type": "string"},
-    "storage": {
-      "type": "object",
-      "required": ["dbPath"],
-      "properties": {
-        "dbPath": {"type": "string"},
-        "journalMode": {"type": "string", "enum": ["DELETE"]},
-        "synchronous": {"type": "string", "enum": ["FULL"]}
-      }
-    },
-    "vcs": {
-      "type": "object",
-      "required": ["enabled", "branch", "autoPush"],
-      "properties": {
-        "enabled": {"type": "boolean"},
-        "branch": {"type": "string"},
-        "autoPush": {"type": "boolean"},
-        "remote": {
-          "type": "object",
-          "properties": {
-            "url": {"type": "string"},
-            "credentialRef": {"type": "string"}
-          }
-        }
-      }
-    },
-    "ipc": {
-      "type": "object",
-      "required": ["socketPath"],
-      "properties": {
-        "socketPath": {"type": "string"},
-        "requireToken": {"type": "boolean"},
-        "tokenRef": {"type": "string"}
-      }
-    },
-    "logging": {
-      "type": "object",
-      "properties": {
-        "level": {"type": "string", "enum": ["debug", "info", "warn", "error"]},
-        "fileMaxSizeMB": {"type": "integer", "minimum": 1},
-        "fileMaxBackups": {"type": "integer", "minimum": 1}
-      }
-    }
-  }
-}
+## 5. Config (TOML) and Tokens
+Profiles now use `config.toml`. Example:
+
+```toml
+profileName = "dev"
+
+[storage]
+dbPath = "/Users/alice/.s0f/dev/state.db"
+journalMode = "DELETE"
+synchronous = "FULL"
+
+[vcs]
+enabled = false
+branch = "main"
+autoPush = false
+
+[ipc]
+socketPath = "/Users/alice/.s0f/dev/ipc.sock"
+requireToken = false
 ```
-- `ipc.requireToken` defaults to `false` for single-user installs. When operators enable it they must provision the shared secret referenced by `tokenRef`, and every client (CLI, Swift app, Chrome extension) has to send the token header before the daemon accepts the connection.
+
+- Add tables such as `[logging]` or `[vcs.remote]` as needed. `ipc.requireToken` defaults to `false`; when enabled you must configure `tokenRef` (and clients must send the shared secret before the daemon accepts a connection).
 
 ## 6. Ops Runbook
 1. **First install:** `s0f init --profile <dir>` ensures directory perms (0700), boots daemon once, creates SQLite DB + Git repo, and prints socket path/profile ID.
