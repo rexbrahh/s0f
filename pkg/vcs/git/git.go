@@ -21,6 +21,15 @@ type Status struct {
 	Hash      string
 }
 
+// StatusInfo captures local vs remote comparison details.
+type StatusInfo struct {
+	LocalHash        string
+	RemoteHash       string
+	RemoteConfigured bool
+	Ahead            bool
+	Behind           bool
+}
+
 // Repo wraps a go-git repository rooted at the profile directory.
 type Repo struct {
 	root string
@@ -113,7 +122,7 @@ func (r *Repo) Pull(ctx context.Context, branch string) error {
 	if err := r.repo.FetchContext(ctx, &ggit.FetchOptions{RemoteName: "origin"}); err != nil && !errors.Is(err, ggit.NoErrAlreadyUpToDate) {
 		return err
 	}
-	ahead, err := r.isAheadOfRemote(branch)
+	_, _, ahead, _, err := r.compareRemote(branch)
 	if err != nil {
 		return err
 	}
@@ -162,31 +171,66 @@ func (r *Repo) SnapshotPath() string {
 }
 
 func (r *Repo) isAheadOfRemote(branch string) (bool, error) {
-	head, err := r.repo.Head()
+	_, _, ahead, _, err := r.compareRemote(branch)
+	return ahead, err
+}
+
+// StatusInfo returns commit hashes and ahead/behind info.
+func (r *Repo) Status(branch string) (StatusInfo, error) {
+	var info StatusInfo
+	head, remote, ahead, behind, err := r.compareRemote(branch)
 	if err != nil {
-		return false, err
+		return info, err
 	}
+	info.LocalHash = head
+	info.RemoteHash = remote
+	info.Ahead = ahead
+	info.Behind = behind
+	info.RemoteConfigured = remote != ""
+	return info, nil
+}
+
+func (r *Repo) compareRemote(branch string) (localHash string, remoteHash string, ahead bool, behind bool, err error) {
+	headRef, err := r.repo.Head()
+	if err != nil {
+		return "", "", false, false, err
+	}
+	localHash = headRef.Hash().String()
 	remoteRef, err := r.repo.Reference(plumbing.ReferenceName("refs/remotes/origin/"+branch), true)
 	if err == plumbing.ErrReferenceNotFound {
-		return false, nil
+		return localHash, "", false, false, nil
 	} else if err != nil {
-		return false, err
+		return "", "", false, false, err
 	}
-	if head.Hash() == remoteRef.Hash() {
-		return false, nil
+	remoteHash = remoteRef.Hash().String()
+	if headRef.Hash() == remoteRef.Hash() {
+		return localHash, remoteHash, false, false, nil
 	}
-	headCommit, err := r.repo.CommitObject(head.Hash())
+	headCommit, err := r.repo.CommitObject(headRef.Hash())
 	if err != nil {
-		return false, err
+		return "", "", false, false, err
 	}
-	var found bool
-	iter := object.NewCommitPreorderIter(headCommit, nil, nil)
+	remoteCommit, err := r.repo.CommitObject(remoteRef.Hash())
+	if err != nil {
+		return "", "", false, false, err
+	}
+	ahead = commitContains(headCommit, remoteRef.Hash()) == false
+	behind = commitContains(remoteCommit, headRef.Hash()) == false
+	return localHash, remoteHash, ahead, behind, nil
+}
+
+func commitContains(start *object.Commit, target plumbing.Hash) bool {
+	if start.Hash == target {
+		return true
+	}
+	iter := object.NewCommitPreorderIter(start, nil, nil)
+	found := false
 	iter.ForEach(func(c *object.Commit) error {
-		if c.Hash == remoteRef.Hash() {
+		if c.Hash == target {
 			found = true
 			return storer.ErrStop
 		}
 		return nil
 	})
-	return !found, nil
+	return found
 }

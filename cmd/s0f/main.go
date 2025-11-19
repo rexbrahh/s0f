@@ -52,6 +52,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "watch error: %v\n", err)
 			os.Exit(1)
 		}
+	case "snapshot":
+		if err := snapshotCommand(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "snapshot error: %v\n", err)
+			os.Exit(1)
+		}
 	case "diag":
 		if err := diagCommand(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "diag error: %v\n", err)
@@ -83,6 +88,7 @@ func usage() {
 	fmt.Println("  apply     Send apply_ops payload (JSON) to the daemon")
 	fmt.Println("  search    Run substring search over title/url")
 	fmt.Println("  watch     Stream tree_changed events from the daemon")
+	fmt.Println("  snapshot  Fetch snapshot payload via IPC")
 	fmt.Println("  diag      Print profile configuration paths")
 	fmt.Println("  remote    Manage Git remote configuration (set/show)")
 	fmt.Println("  vcs push|pull    Trigger VCS push or pull via the daemon")
@@ -266,6 +272,23 @@ func watchCommand(args []string) error {
 	}
 }
 
+func snapshotCommand(args []string) error {
+	fs := flag.NewFlagSet("snapshot", flag.ExitOnError)
+	profile := fs.String("profile", "./_dev_profile", "Profile directory")
+	socket := fs.String("socket", "", "Override socket path")
+	_ = fs.Parse(args)
+	resp, err := rpcCall(*profile, *socket, "get_snapshot", json.RawMessage(`{}`))
+	if err != nil {
+		return err
+	}
+	out, err := json.MarshalIndent(resp.Result, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(out))
+	return nil
+}
+
 func diagCommand(args []string) error {
 	fs := flag.NewFlagSet("diag", flag.ExitOnError)
 	profile := fs.String("profile", "./_dev_profile", "Profile directory")
@@ -339,7 +362,7 @@ func remoteCommand(args []string) error {
 
 func vcsCommand(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: s0f vcs <push|pull> [options]")
+		return fmt.Errorf("usage: s0f vcs <push|pull|status> [options]")
 	}
 	sub := args[0]
 	fs := flag.NewFlagSet("vcs", flag.ExitOnError)
@@ -353,6 +376,8 @@ func vcsCommand(args []string) error {
 		method = "vcs_push"
 	case "pull":
 		method = "vcs_pull"
+	case "status":
+		method = "vcs_status"
 	default:
 		return fmt.Errorf("unknown vcs subcommand %q", sub)
 	}

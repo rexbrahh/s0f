@@ -19,7 +19,9 @@ func (d *daemon) registerHandlers(srv *ipc.Server) {
 	srv.Register("apply_ops", d.handleApplyOps)
 	srv.Register("vcs_push", d.handleVCSPush)
 	srv.Register("vcs_pull", d.handleVCSPull)
+	srv.Register("vcs_status", d.handleVCSStatus)
 	srv.Register("search", d.handleSearch)
+	srv.Register("get_snapshot", d.handleGetSnapshot)
 }
 
 func (d *daemon) handleGetTree(ctx context.Context, params json.RawMessage) (any, *ipc.Error) {
@@ -127,6 +129,34 @@ func (d *daemon) handleVCSPull(ctx context.Context, params json.RawMessage) (any
 		return nil, ipc.Errorf("STORAGE_ERROR", err.Error(), nil)
 	}
 	return map[string]any{"tree": tree}, nil
+}
+
+func (d *daemon) handleVCSStatus(ctx context.Context, params json.RawMessage) (any, *ipc.Error) {
+	if d.repo == nil {
+		return nil, ipc.Errorf("VCS_ERROR", "git repo unavailable", nil)
+	}
+	info, err := d.repo.Status(d.cfg.VCS.Branch)
+	if err != nil {
+		return nil, ipc.Errorf("VCS_ERROR", err.Error(), nil)
+	}
+	resp := map[string]any{
+		"localHash":  info.LocalHash,
+		"remoteHash": info.RemoteHash,
+		"remoteUrl":  d.cfg.VCS.Remote.URL,
+		"branch":     d.cfg.VCS.Branch,
+		"ahead":      info.Ahead,
+		"behind":     info.Behind,
+	}
+	return resp, nil
+}
+
+func (d *daemon) handleGetSnapshot(ctx context.Context, params json.RawMessage) (any, *ipc.Error) {
+	tree, err := d.store.LoadTree(ctx)
+	if err != nil {
+		return nil, ipc.Errorf("STORAGE_ERROR", err.Error(), nil)
+	}
+	payload := buildSnapshotPayload(tree)
+	return payload, nil
 }
 
 type vcsStatus struct {

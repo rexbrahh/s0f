@@ -28,7 +28,15 @@ func writeSnapshot(profileDir string, tree core.Tree) error {
 	}
 	defer file.Close()
 
-	payload := snapshotPayload{
+	payload := buildSnapshotPayload(tree)
+
+	enc := json.NewEncoder(file)
+	enc.SetIndent("", "  ")
+	return enc.Encode(payload)
+}
+
+func buildSnapshotPayload(tree core.Tree) snapshotPayload {
+	return snapshotPayload{
 		SchemaVersion: snapshotSchemaVersion,
 		GeneratedAt:   time.Now().UnixMilli(),
 		Version:       tree.Version,
@@ -36,10 +44,6 @@ func writeSnapshot(profileDir string, tree core.Tree) error {
 		Nodes:         tree.Nodes,
 		Children:      normalizeChildren(tree),
 	}
-
-	enc := json.NewEncoder(file)
-	enc.SetIndent("", "  ")
-	return enc.Encode(payload)
 }
 
 func normalizeChildren(tree core.Tree) map[string][]string {
